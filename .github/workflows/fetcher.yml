@@ -1,0 +1,87 @@
+name: GitHub Offline Browser Fetcher
+
+on:
+  workflow_dispatch:
+    inputs:
+      request_id:
+        description: 'Request ID to process'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  fetch-and-upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install system dependencies & Playwright
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zip coreutils
+          npm init -y
+          npm install playwright single-file-cli
+          npx playwright install --with-deps chromium
+
+      - name: Execute Remote Playwright Runner
+        env:
+          REQUEST_ID: ${{ inputs.request_id }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+        run: |
+          node scripts/remote_runner.mjs "${{ inputs.request_id }}"
+
+      - name: Remove processed request envelope
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin ${{ github.ref_name }} || true
+          if [ -f "requests/${{ inputs.request_id }}.json" ]; then
+            git rm -f "requests/${{ inputs.request_id }}.json"
+            git commit -m "chore(ci): update sync state" || true
+            git push origin ${{ github.ref_name }} || true
+          fi
+
+      - name: Package, Encrypt & Split into 50MB Chunks
+        id: package_step
+        env:
+          REQUEST_ID: ${{ inputs.request_id }}
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+        run: |
+          node scripts/pack_payload.mjs "${{ inputs.request_id }}"
+
+      - name: Create Release and Upload Chunks then Manifest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="res-${{ inputs.request_id }}"
+          
+          # Delete existing release/tag if retry
+          gh release delete "$TAG" --yes 2>/dev/null || true
+          git push --delete origin "$TAG" 2>/dev/null || true
+          git tag -d "$TAG" 2>/dev/null || true
+
+          echo "Creating release $TAG and uploading chunks..."
+          gh release create "$TAG" payload.zip.part* --target "${{ github.ref_name }}" --title "Package $TAG" --notes "build: sync cache manifest"
+
+          echo "Uploading manifest.json as atomic completion signal..."
+          gh release upload "$TAG" manifest.json
+
+      - name: Auto Janitor (Clean up old releases)
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          node -e "import('./scripts/remote_runner.mjs').then(m => m.autoJanitorCleanupReleases && m.autoJanitorCleanupReleases())" || true
