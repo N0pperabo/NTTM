@@ -1,4 +1,0 @@
-    # 4. Initialize and launch UI Shell
-    #    Note: OfflineBrowserUI's parameter is still named `transport` for
-    #    backward compatibility; it duck-types any FetchEngine implementation.
-    ui = OfflineBrowserUI(transport=engine, session_manager=session_manager)
