@@ -20,8 +20,8 @@ if sys.platform == "win32":
 
 from client.browser_ui import OfflineBrowserUI
 from client.config import BrowserConfig
+from client.engine import create_engine, list_available_engines
 from client.session_manager import SessionManager
-from client.transport import GitHubTransport
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,13 +46,20 @@ def main():
         action="store_true",
         help="اجرای برنامه و باز شدن مستقیم در مرورگر پیش‌فرض سیستم به جای پنجره دسکتاپ پایتون",
     )
+    parser.add_argument(
+        "--engine",
+        type=str,
+        default="github",
+        choices=sorted(list_available_engines()),
+        help="موتور مرور: github (پیش‌فرض، وضعیت موجود) یا local (در حال توسعه - فاز ۱)",
+    )
     args = parser.parse_args()
 
-    logger.info("Starting GitHub Offline Browser...")
+    logger.info("Starting NTTM_PLUS Offline Browser...")
 
     # 1. Load or initialize configuration
     config = BrowserConfig.load()
-    if not config.is_configured():
+    if args.engine == "github" and not config.is_configured():
         logger.warning(
             "GitHub PAT or Repository not configured yet. Please configure via UI Settings."
         )
@@ -60,11 +67,13 @@ def main():
     # 2. Initialize Session Manager (cookies, localStorage, sessionStorage)
     session_manager = SessionManager()
 
-    # 3. Initialize GitHub Transport
-    transport = GitHubTransport(config=config, session_manager=session_manager)
+    # 3. Build the browsing engine through the Phase 0 factory.
+    #    Everything below this line is engine-agnostic.
+    engine = create_engine(args.engine, config, session_manager)
+    logger.info("Active engine: %s", engine.name)
 
     # 4. Initialize and launch UI Shell
-    ui = OfflineBrowserUI(transport=transport, session_manager=session_manager)
+    ui = OfflineBrowserUI(engine=engine, session_manager=session_manager)
 
     if args.url:
         ui.current_url = args.url
