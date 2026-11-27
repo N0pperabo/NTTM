@@ -73,7 +73,9 @@ def main():
     logger.info("Active engine: %s", engine.name)
 
     # 4. Initialize and launch UI Shell
-    ui = OfflineBrowserUI(engine=engine, session_manager=session_manager)
+    #    Note: OfflineBrowserUI's parameter is still named `transport` for
+    #    backward compatibility; it duck-types any FetchEngine implementation.
+    ui = OfflineBrowserUI(transport=engine, session_manager=session_manager)
 
     if args.url:
         ui.current_url = args.url
