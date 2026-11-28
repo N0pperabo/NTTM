@@ -266,7 +266,7 @@ class OfflineBrowserUI:
             self.current_scroll_steps = max(0, int(steps or 0))
         except Exception:
             self.current_scroll_steps = 0
-        logger.info(f"Custom scroll steps set to {self.current_scroll_steps}s in Python UI state.")
+        logger.info(f"Custom scroll steps set to {self.current_scroll_steps} in Python UI state.")
 
     def get_and_consume_scroll(self, param_scroll: Any = 0) -> int:
         """Returns the scroll steps and resets it back to 0."""
