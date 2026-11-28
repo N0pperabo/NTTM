@@ -20,8 +20,8 @@ if sys.platform == "win32":
 
 from client.browser_ui import OfflineBrowserUI
 from client.config import BrowserConfig
+from client.engine import create_engine, list_available_engines
 from client.session_manager import SessionManager
-from client.transport import GitHubTransport
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,13 +46,27 @@ def main():
         action="store_true",
         help="اجرای برنامه و باز شدن مستقیم در مرورگر پیش‌فرض سیستم به جای پنجره دسکتاپ پایتون",
     )
+    parser.add_argument(
+        "--engine",
+        type=str,
+        default="",
+        help="موتور مرور: github یا local. اگر داده نشود از آخرین انتخاب ذخیره‌شده در تنظیمات (فاز ۲) استفاده می‌شود",
+    )
     args = parser.parse_args()
 
-    logger.info("Starting GitHub Offline Browser...")
+    logger.info("Starting NTTM_PLUS Offline Browser...")
 
     # 1. Load or initialize configuration
     config = BrowserConfig.load()
-    if not config.is_configured():
+
+    # Engine resolution (Phase 2): CLI flag overrides the persisted choice.
+    engine_choice = (args.engine or getattr(config, "engine", "github") or "github").strip().lower()
+    if engine_choice not in list_available_engines():
+        logger.warning("Unknown engine '%s' in settings; falling back to 'github'.", engine_choice)
+        engine_choice = "github"
+    config.engine = engine_choice
+
+    if engine_choice == "github" and not config.is_configured():
         logger.warning(
             "GitHub PAT or Repository not configured yet. Please configure via UI Settings."
         )
@@ -60,11 +74,15 @@ def main():
     # 2. Initialize Session Manager (cookies, localStorage, sessionStorage)
     session_manager = SessionManager()
 
-    # 3. Initialize GitHub Transport
-    transport = GitHubTransport(config=config, session_manager=session_manager)
+    # 3. Build the browsing engine through the Phase 0 factory.
+    #    Everything below this line is engine-agnostic.
+    engine = create_engine(engine_choice, config, session_manager)
+    logger.info("Active engine: %s", engine.name)
 
     # 4. Initialize and launch UI Shell
-    ui = OfflineBrowserUI(transport=transport, session_manager=session_manager)
+    #    Note: OfflineBrowserUI's parameter is still named `transport` for
+    #    backward compatibility; it duck-types any FetchEngine implementation.
+    ui = OfflineBrowserUI(transport=engine, session_manager=session_manager)
 
     if args.url:
         ui.current_url = args.url
